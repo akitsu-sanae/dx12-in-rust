@@ -1,0 +1,16 @@
+[package]
+name = "dx12-in-rust"
+version = "0.1.0"
+authors = ["akitsu-sanae"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+winapi = { version= "0.3.8", features = ["windef", "winuser", "libloaderapi"] }
+kernel32-sys = "0.2.2"
+user32-sys = "0.2.0"
+d3d12-sys = "0.2.0"
+dxgi-sys = "0.2.0"
+d3dcompiler-sys = "0.2.0"
+widestring = "0.4.0"
