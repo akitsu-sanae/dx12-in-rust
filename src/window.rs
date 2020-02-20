@@ -6,8 +6,10 @@ use winapi::um::winuser::WNDCLASSEXW;
 use widestring::U16CString;
 
 pub struct Window {
+    pub width: usize,
+    pub height: usize,
     pub handle: HWND,
-    class: WNDCLASSEXW,
+    pub class: WNDCLASSEXW,
 }
 
 impl Window {
@@ -67,6 +69,8 @@ impl Window {
             )
         };
         Window {
+            width: width,
+            height: height,
             handle: handle,
             class: class,
         }
