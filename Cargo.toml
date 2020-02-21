@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies.winapi]
 version = "0.3.8"
 features = [
+    "basetsd",
     "windef",
     "winuser",
     "winerror",

@@ -1,13 +1,21 @@
 use std::ptr::{null, null_mut};
-use winapi::shared::minwindef::{BOOL, UINT};
 use winapi::{
     ctypes::c_void,
     shared::{
-        dxgi1_2::IDXGISwapChain1, dxgi1_5::IDXGISwapChain4, dxgi1_6::IDXGIFactory6, winerror::S_OK,
+        basetsd::UINT64,
+        dxgi::DXGI_SWAP_CHAIN_DESC,
+        dxgi1_2::IDXGISwapChain1,
+        dxgi1_5::IDXGISwapChain4,
+        dxgi1_6::IDXGIFactory6,
+        minwindef::{BOOL, UINT},
+        winerror::S_OK,
     },
     um::{
         d3d12::{
-            ID3D12CommandAllocator, ID3D12CommandQueue, ID3D12Device, ID3D12GraphicsCommandList,
+            ID3D12CommandAllocator, ID3D12CommandQueue, ID3D12DescriptorHeap, ID3D12Device,
+            ID3D12Fence, ID3D12GraphicsCommandList, ID3D12Resource, D3D12_CPU_DESCRIPTOR_HANDLE,
+            D3D12_DESCRIPTOR_HEAP_DESC, D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+            D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_FENCE_FLAG_NONE,
         },
         unknwnbase::IUnknown,
     },
@@ -20,33 +28,39 @@ pub struct Direct3D {
     device: *mut ID3D12Device,
     factory: *mut IDXGIFactory6,
     swapchain: *mut IDXGISwapChain4,
+    rtv_heaps: *mut ID3D12DescriptorHeap,
 
+    back_buffers: Vec<*mut ID3D12Resource>,
     command_manager: CommandManager,
+    fence: *mut ID3D12Fence,
+    fence_val: UINT64,
 }
 
 fn create_factory() -> Result<*mut IDXGIFactory6, String> {
     use winapi::shared::dxgi1_3::{CreateDXGIFactory2, DXGI_CREATE_FACTORY_DEBUG};
     let mut factory: *mut IDXGIFactory6 = null_mut();
-    if unsafe {
+    let result = unsafe {
         CreateDXGIFactory2(
             DXGI_CREATE_FACTORY_DEBUG,
             &IDXGIFactory6::uuidof(),
             &mut factory as *mut *mut _ as *mut *mut c_void,
         )
-    } == S_OK
-    {
-        Ok(factory)
-    } else if unsafe {
-        CreateDXGIFactory2(
-            0,
-            &IDXGIFactory6::uuidof(),
-            &mut factory as *mut *mut _ as *mut *mut c_void,
-        )
-    } == S_OK
-    {
+    };
+    if result == S_OK {
         Ok(factory)
     } else {
-        Err("failed: create DXGIFactory".to_string())
+        let result = unsafe {
+            CreateDXGIFactory2(
+                0,
+                &IDXGIFactory6::uuidof(),
+                &mut factory as *mut *mut _ as *mut *mut c_void,
+            )
+        };
+        if result == S_OK {
+            Ok(factory)
+        } else {
+            Err("failed: create DXGIFactory".to_string())
+        }
     }
 }
 
@@ -60,15 +74,15 @@ fn create_device() -> Result<*mut ID3D12Device, String> {
         D3D_FEATURE_LEVEL_11_0,
     ];
     for level in feature_levels.iter() {
-        if unsafe {
+        let result = unsafe {
             D3D12CreateDevice(
                 null_mut(),
                 *level,
                 &ID3D12Device::uuidof(),
                 &mut device as *mut *mut _ as *mut *mut c_void,
             )
-        } == S_OK
-        {
+        };
+        if result == S_OK {
             return Ok(device);
         }
     }
@@ -114,10 +128,83 @@ fn create_swapchain(
             &mut swapchain as *mut *mut _ as *mut *mut IDXGISwapChain1,
         )
     };
-    if result != S_OK {
+    if result == S_OK {
         Ok(swapchain)
     } else {
         Err("failed: create IDXGIFactory6".to_string())
+    }
+}
+
+fn create_rtv_heaps(dev: *mut ID3D12Device) -> Result<*mut ID3D12DescriptorHeap, String> {
+    let desc = D3D12_DESCRIPTOR_HEAP_DESC {
+        Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV, // render target view
+        NumDescriptors: 2,
+        Flags: D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+        NodeMask: 0,
+    };
+    let mut rtv_heaps: *mut ID3D12DescriptorHeap = null_mut();
+    let result = unsafe {
+        (*dev).CreateDescriptorHeap(
+            &desc,
+            &ID3D12DescriptorHeap::uuidof(),
+            &mut rtv_heaps as *mut *mut _ as *mut *mut c_void,
+        )
+    };
+    if result == S_OK {
+        Ok(rtv_heaps)
+    } else {
+        Err("failed: create ID3D12DescriptorHeap".to_string())
+    }
+}
+
+fn create_back_buffers(
+    device: *mut ID3D12Device,
+    swapchain: *mut IDXGISwapChain4,
+    rtv_heaps: *mut ID3D12DescriptorHeap,
+) -> Result<Vec<*mut ID3D12Resource>, String> {
+    let mut swapchain_desc: DXGI_SWAP_CHAIN_DESC = unsafe { std::mem::zeroed() };
+    let result = unsafe { (*swapchain).GetDesc(&mut swapchain_desc) };
+    if result != S_OK {
+        return Err("failed: get swapchain descriptor".to_string());
+    }
+    let mut back_buffers: Vec<*mut ID3D12Resource> = vec![];
+    back_buffers.resize(swapchain_desc.BufferCount as usize, null_mut());
+    let mut handle: D3D12_CPU_DESCRIPTOR_HANDLE =
+        unsafe { (*rtv_heaps).GetCPUDescriptorHandleForHeapStart() };
+    for i in { 0..swapchain_desc.BufferCount } {
+        let result = unsafe {
+            (*swapchain).GetBuffer(
+                i,
+                &ID3D12Resource::uuidof(),
+                &mut back_buffers[i as usize] as *mut *mut _ as *mut *mut c_void,
+            )
+        };
+        if result != S_OK {
+            return Err("failed: get buffer".to_string());
+        }
+        unsafe { (*device).CreateRenderTargetView(back_buffers[i as usize], null(), handle) }
+        handle.ptr +=
+            unsafe { (*device).GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) }
+                as usize;
+    }
+    Ok(back_buffers)
+}
+
+fn create_fence(device: *mut ID3D12Device) -> Result<(*mut ID3D12Fence, UINT64), String> {
+    let mut fence: *mut ID3D12Fence = unsafe { null_mut() };
+    let fence_val: UINT64 = 0;
+    let result = unsafe {
+        (*device).CreateFence(
+            fence_val,
+            D3D12_FENCE_FLAG_NONE,
+            &ID3D12Fence::uuidof(),
+            &mut fence as *mut *mut _ as *mut *mut c_void,
+        )
+    };
+    if result == S_OK {
+        Ok((fence, fence_val))
+    } else {
+        Err("fail: create fence".to_string())
     }
 }
 
@@ -127,15 +214,22 @@ impl Direct3D {
         let device = create_device()?;
         let command_manager = CommandManager::create(device)?;
         let swapchain = create_swapchain(factory, &command_manager, window)?;
+        let rtv_heaps = create_rtv_heaps(device)?;
+        let back_buffers = create_back_buffers(device, swapchain, rtv_heaps)?;
+        let (fence, fence_val) = create_fence(device)?;
         Ok(Direct3D {
             factory: factory,
             device: device,
-            command_manager: command_manager,
             swapchain: swapchain,
+            rtv_heaps: rtv_heaps,
+            back_buffers: back_buffers,
+            command_manager: command_manager,
+            fence: fence,
+            fence_val: fence_val,
         })
     }
 
-    pub fn update(&self) {
+    pub fn update(&mut self) {
         use winapi::um::d3d12::{
             D3D12_RESOURCE_BARRIER, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
             D3D12_RESOURCE_BARRIER_FLAG_NONE, D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
@@ -147,15 +241,43 @@ impl Direct3D {
             Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
             ..unsafe { std::mem::zeroed() }
         };
+        let backbuffer_idx = unsafe { (*self.swapchain).GetCurrentBackBufferIndex() } as usize;
         unsafe {
             *barrier.u.Transition_mut() = D3D12_RESOURCE_TRANSITION_BARRIER {
-                pResource: unimplemented!(), // backBuffers[backbuffer_index],
+                pResource: self.back_buffers[backbuffer_idx],
                 Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
                 StateBefore: D3D12_RESOURCE_STATE_PRESENT,
                 StateAfter: D3D12_RESOURCE_STATE_RENDER_TARGET,
             };
         }
         unsafe { (*self.command_manager.list).ResourceBarrier(1, &barrier) };
+
+        let mut rtv_h = unsafe { (*self.rtv_heaps).GetCPUDescriptorHandleForHeapStart() };
+        rtv_h.ptr += backbuffer_idx
+            * unsafe {
+                (*self.device).GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV)
+            } as usize;
+        unsafe { (*self.command_manager.list).OMSetRenderTargets(1, &rtv_h, 0, null()) };
+
+        let color = [1.0f32, 1.0f32, 0.0f32, 1.0f32];
+        unsafe {
+            (*self.command_manager.list).ClearRenderTargetView(rtv_h, &color as *const _, 0, null())
+        }
+
+        unsafe { (*self.command_manager.list).Close() };
+
+        let command_lists = vec![self.command_manager.list];
+        unsafe {
+            (*self.command_manager.queue)
+                .ExecuteCommandLists(1, command_lists.as_ptr() as *const _);
+            self.fence_val += 1;
+            (*self.command_manager.queue).Signal(self.fence, self.fence_val);
+        }
+        unsafe {
+            (*self.command_manager.allocator).Reset();
+            (*self.command_manager.list).Reset(self.command_manager.allocator, null_mut());
+            (*self.swapchain).Present(1, 0);
+        }
     }
 }
 

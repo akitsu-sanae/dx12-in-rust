@@ -8,7 +8,7 @@ mod window;
 fn main() {
     let mut window = window::Window::create("dx12 test in rust", 640, 480);
 
-    let direct3d = direct3d::Direct3D::create(&window).unwrap();
+    let mut direct3d = direct3d::Direct3D::create(&window).unwrap();
 
     window.show();
 
