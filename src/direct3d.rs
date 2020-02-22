@@ -191,7 +191,7 @@ fn create_back_buffers(
 }
 
 fn create_fence(device: *mut ID3D12Device) -> Result<(*mut ID3D12Fence, UINT64), String> {
-    let mut fence: *mut ID3D12Fence = unsafe { null_mut() };
+    let mut fence: *mut ID3D12Fence = null_mut();
     let fence_val: UINT64 = 0;
     let result = unsafe {
         (*device).CreateFence(
@@ -236,21 +236,21 @@ impl Direct3D {
             D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET,
             D3D12_RESOURCE_TRANSITION_BARRIER,
         };
-        let mut barrier = D3D12_RESOURCE_BARRIER {
+        let mut barrier_desc = D3D12_RESOURCE_BARRIER {
             Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
             Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
             ..unsafe { std::mem::zeroed() }
         };
         let backbuffer_idx = unsafe { (*self.swapchain).GetCurrentBackBufferIndex() } as usize;
         unsafe {
-            *barrier.u.Transition_mut() = D3D12_RESOURCE_TRANSITION_BARRIER {
+            *barrier_desc.u.Transition_mut() = D3D12_RESOURCE_TRANSITION_BARRIER {
                 pResource: self.back_buffers[backbuffer_idx],
                 Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
                 StateBefore: D3D12_RESOURCE_STATE_PRESENT,
                 StateAfter: D3D12_RESOURCE_STATE_RENDER_TARGET,
             };
         }
-        unsafe { (*self.command_manager.list).ResourceBarrier(1, &barrier) };
+        unsafe { (*self.command_manager.list).ResourceBarrier(1, &barrier_desc) };
 
         let mut rtv_h = unsafe { (*self.rtv_heaps).GetCPUDescriptorHandleForHeapStart() };
         rtv_h.ptr += backbuffer_idx
@@ -262,6 +262,12 @@ impl Direct3D {
         let color = [1.0f32, 1.0f32, 0.0f32, 1.0f32];
         unsafe {
             (*self.command_manager.list).ClearRenderTargetView(rtv_h, &color as *const _, 0, null())
+        }
+
+        unsafe {
+            barrier_desc.u.Transition_mut().StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+            barrier_desc.u.Transition_mut().StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+            (*self.command_manager.list).ResourceBarrier(1, &barrier_desc);
         }
 
         unsafe { (*self.command_manager.list).Close() };
