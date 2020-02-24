@@ -18,8 +18,10 @@ features = [
     "dxgi1_5",
     "dxgi1_6",
     "d3d12",
+    "d3dcompiler",
     "d3dcommon",
-    "unknwnbase"
+    "unknwnbase",
+    "d3d12sdklayers"
 ]
 
 [dependencies]

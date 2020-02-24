@@ -38,6 +38,9 @@ impl CommandManager {
     pub fn get_queue(&self) -> *mut ID3D12CommandQueue {
         self.queue
     }
+    pub fn get_list(&self) -> &ID3D12GraphicsCommandList {
+        unsafe { &*self.list }
+    }
 
     pub fn resource_barrier(
         &self,
