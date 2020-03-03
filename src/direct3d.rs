@@ -10,7 +10,7 @@ use winapi::{
         dxgi1_2::IDXGISwapChain1,
         dxgi1_5::IDXGISwapChain4,
         dxgi1_6::IDXGIFactory6,
-        minwindef::{BOOL, UINT},
+        minwindef::{FALSE, TRUE, UINT},
     },
     um::{d3d12::*, unknwnbase::IUnknown},
     Interface,
@@ -103,7 +103,7 @@ fn create_swapchain(
         Width: window.width as UINT,
         Height: window.height as UINT,
         Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-        Stereo: false as BOOL,
+        Stereo: FALSE,
         SampleDesc: DXGI_SAMPLE_DESC {
             Count: 1 as UINT,
             Quality: 0 as UINT,
@@ -317,6 +317,7 @@ impl Direct3D {
         let mut vs_blob: *mut ID3DBlob = null_mut();
         let mut ps_blob: *mut ID3DBlob = null_mut();
         let mut error_blob: *mut ID3DBlob = null_mut();
+
         let result = unsafe {
             D3DCompileFromFile(
                 U16CString::from_str("resource/VertexShader.hlsl")
@@ -356,8 +357,9 @@ impl Direct3D {
             return Err("failed: compile pixel shader file".to_string());
         }
 
-        let input_layout = [D3D12_INPUT_ELEMENT_DESC {
-            SemanticName: U16CString::from_str("POSITION").unwrap().as_ptr() as *const _,
+        let semantic_name = "POSITION\0";
+        let input_layout: [D3D12_INPUT_ELEMENT_DESC; 1] = [D3D12_INPUT_ELEMENT_DESC {
+            SemanticName: semantic_name.as_ptr() as *const _,
             SemanticIndex: 0,
             Format: DXGI_FORMAT_R32G32B32_FLOAT,
             InputSlot: 0,
@@ -375,34 +377,34 @@ impl Direct3D {
             graphics_pipeline.PS.BytecodeLength = (*vs_blob).GetBufferSize();
         }
         graphics_pipeline.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
-        graphics_pipeline.BlendState.AlphaToCoverageEnable = 0;
-        graphics_pipeline.BlendState.IndependentBlendEnable = 0;
+        graphics_pipeline.BlendState.AlphaToCoverageEnable = FALSE;
+        graphics_pipeline.BlendState.IndependentBlendEnable = FALSE;
 
         let mut render_target_blend_desc: D3D12_RENDER_TARGET_BLEND_DESC = unsafe { zeroed() };
-        render_target_blend_desc.BlendEnable = 0;
+        render_target_blend_desc.BlendEnable = FALSE;
         render_target_blend_desc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL as u8;
 
-        render_target_blend_desc.LogicOpEnable = 0;
+        render_target_blend_desc.LogicOpEnable = FALSE;
 
         graphics_pipeline.BlendState.RenderTarget[0] = render_target_blend_desc;
 
-        graphics_pipeline.RasterizerState.MultisampleEnable = 0;
+        graphics_pipeline.RasterizerState.MultisampleEnable = FALSE;
         graphics_pipeline.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
         graphics_pipeline.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-        graphics_pipeline.RasterizerState.DepthClipEnable = 1;
+        graphics_pipeline.RasterizerState.DepthClipEnable = TRUE;
 
-        graphics_pipeline.RasterizerState.FrontCounterClockwise = 0;
+        graphics_pipeline.RasterizerState.FrontCounterClockwise = FALSE;
         graphics_pipeline.RasterizerState.DepthBias = D3D12_DEFAULT_DEPTH_BIAS as i32;
         graphics_pipeline.RasterizerState.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
         graphics_pipeline.RasterizerState.SlopeScaledDepthBias =
             D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
-        graphics_pipeline.RasterizerState.AntialiasedLineEnable = 0;
+        graphics_pipeline.RasterizerState.AntialiasedLineEnable = FALSE;
         graphics_pipeline.RasterizerState.ForcedSampleCount = 0;
         graphics_pipeline.RasterizerState.ConservativeRaster =
             D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
 
-        graphics_pipeline.DepthStencilState.DepthEnable = 0;
-        graphics_pipeline.DepthStencilState.StencilEnable = 0;
+        graphics_pipeline.DepthStencilState.DepthEnable = FALSE;
+        graphics_pipeline.DepthStencilState.StencilEnable = FALSE;
 
         graphics_pipeline.InputLayout.pInputElementDescs = input_layout.as_ptr();
         graphics_pipeline.InputLayout.NumElements = input_layout.len() as u32;
